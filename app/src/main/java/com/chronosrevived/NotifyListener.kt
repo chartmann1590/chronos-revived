@@ -15,6 +15,7 @@ class NotifyListener : NotificationListenerService() {
     override fun onListenerConnected() {
         Chronos.init(this)
         Chronos.connect(autoConnect = true)
+        if (Chronos.address != null) LinkService.start(this)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {

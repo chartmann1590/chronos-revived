@@ -37,13 +37,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); Chronos.connect() }
+    override fun onResume() { super.onResume(); Chronos.connect(); startLink() }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<String>, results: IntArray) {
+        super.onRequestPermissionsResult(code, perms, results)
+        startLink()
+    }
+
+    /** The always-on service needs Bluetooth permission first (Android 14 refuses it otherwise). */
+    private fun startLink() {
+        val ok = Build.VERSION.SDK_INT < 31 ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        if (ok && Chronos.address != null) LinkService.start(this)
+    }
 
     private fun askPermissions() {
         val perms = if (Build.VERSION.SDK_INT >= 31)
             arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-        val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        val all = if (Build.VERSION.SDK_INT >= 33) perms + Manifest.permission.POST_NOTIFICATIONS else perms
+        val missing = all.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1)
     }
 }

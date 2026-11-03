@@ -98,13 +98,13 @@ private fun Proto.Color.label() =
 private data class DiscState(
     val address: String?, val connected: Boolean, val battery: Int, val status: Int, val firmware: String,
     val steps: Int?, val scanning: Boolean, val bootloader: Boolean, val bonding: Boolean, val dfu: Int,
-    val buzzCount: Int, val lastBuzz: Pair<Proto.Color, Int>,
+    val buzzCount: Int, val lastBuzz: Pair<Proto.Color, Int>, val link: Chronos.Link,
 )
 
 private fun snapshot() = DiscState(
     Chronos.address, Chronos.connected, Chronos.battery, Chronos.status, Chronos.firmware,
     Chronos.steps?.total, Chronos.scanning, Chronos.inBootloader, Chronos.bonding, Chronos.dfuProgress,
-    Chronos.buzzCount, Chronos.lastBuzz,
+    Chronos.buzzCount, Chronos.lastBuzz, Chronos.link,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -267,6 +267,8 @@ private fun Dial(s: DiscState, glow: Float, led: Color) {
                 }
                 s.bootloader -> Text("needs firmware", style = body(14, 500, C.warn))
                 s.address == null -> Text(if (s.scanning) "searching" else "not paired yet", style = body(14, 500, C.muted))
+                s.link == Chronos.Link.OUT_OF_RANGE -> Text("out of range", style = body(14, 500, C.muted))
+                s.link == Chronos.Link.BLUETOOTH_OFF -> Text("bluetooth off", style = body(14, 500, C.muted))
                 else -> Text("asleep", style = body(14, 500, C.muted))
             }
         }
@@ -329,6 +331,9 @@ private fun StatusLine(s: DiscState) {
         s.connected -> "Connected" to batteryPhrase(s)
         s.bootloader -> "Firmware missing" to "The disc is waiting for an update."
         s.scanning -> "Searching" to "Shake the disc to wake it up."
+        s.link == Chronos.Link.BLUETOOTH_OFF -> "Bluetooth is off" to "Turn it on and the disc reconnects by itself."
+        s.link == Chronos.Link.OUT_OF_RANGE -> "Out of range" to (lastSeenPhrase() ?: "Bring the disc closer and it reconnects by itself.")
+        s.link == Chronos.Link.CONNECTING -> "Connecting" to "Shake the disc if this takes a while."
         s.address != null -> "Disc asleep" to (lastSeenPhrase() ?: "It sleeps to save power. Shake it and it'll reconnect.")
         else -> "No disc yet" to "Find your Chronos to get started."
     }
@@ -341,15 +346,10 @@ private fun StatusLine(s: DiscState) {
 }
 
 private fun lastSeenPhrase(): String? {
-    val (pct, at) = Chronos.lastBattery ?: return null
-    val mins = ((System.currentTimeMillis() - at) / 60_000).toInt()
-    val ago = when {
-        mins < 1 -> "just now"
-        mins < 60 -> "$mins min ago"
-        mins < 48 * 60 -> "${mins / 60} h ago"
-        else -> "${mins / 1440} days ago"
-    }
-    return "Battery was $pct% when last seen $ago. Shake it to reconnect."
+    if (Chronos.lastSeen == 0L) return null
+    val ago = LinkService.ago(Chronos.lastSeen)
+    val pct = Chronos.lastBattery?.first
+    return "Last seen $ago" + (if (pct != null) " with $pct% battery." else ".") + " It reconnects by itself."
 }
 
 private fun batteryPhrase(s: DiscState): String {

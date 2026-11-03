@@ -19,6 +19,12 @@ object Chronos : BluetoothGattCallback() {
     private var deviceBusy = false
 
     var connected = false; private set
+
+    /** Why the link is down, from the Bluetooth stack's disconnect reason. */
+    enum class Link { NEVER, CONNECTING, CONNECTED, ASLEEP, OUT_OF_RANGE, BLUETOOTH_OFF }
+    var link = Link.NEVER; private set
+    /** When the disc was last connected (persisted), 0 = never. */
+    val lastSeen: Long get() = if (::app.isInitialized) prefs.getLong("lastSeen", 0) else 0
     var inBootloader = false; private set
     var dfuActive = false
     var dfuProgress = -1
@@ -44,6 +50,15 @@ object Chronos : BluetoothGattCallback() {
                 say("bond state ${i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)}"); next()
             }
         }, android.content.IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
+        // Bluetooth toggled: drop the dead link when it goes off, start waiting for the disc when it comes back.
+        app.registerReceiver(object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, i: android.content.Intent) {
+                when (i.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)) {
+                    BluetoothAdapter.STATE_OFF -> { release(); link = Link.BLUETOOTH_OFF; changed() }
+                    BluetoothAdapter.STATE_ON -> { link = Link.ASLEEP; changed(); connect(autoConnect = true) }
+                }
+            }
+        }, android.content.IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
     }
 
     private val prefs get() = app.getSharedPreferences("chronos", Context.MODE_PRIVATE)
@@ -56,13 +71,16 @@ object Chronos : BluetoothGattCallback() {
         log.addLast(msg); while (log.size > 200) log.removeFirst()
         listeners.forEach { it() }
     }
+    private fun markSeen() = prefs.edit().putLong("lastSeen", System.currentTimeMillis()).apply()
+
     private fun changed() = main.post { listeners.forEach { it() } }
 
     fun connect(autoConnect: Boolean = false) {
         val addr = address ?: return
         if (gatt != null || dfuActive) return
         val adapter = (app.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter ?: return
-        if (!adapter.isEnabled) { say("Bluetooth is off"); return }
+        if (!adapter.isEnabled) { say("Bluetooth is off"); link = Link.BLUETOOTH_OFF; changed(); return }
+        if (link == Link.NEVER || link == Link.BLUETOOTH_OFF || !autoConnect) { link = Link.CONNECTING; changed() }
         say("Connecting to $addr (auto=$autoConnect)")
         gatt = adapter.getRemoteDevice(addr).connectGatt(app, autoConnect, this, BluetoothDevice.TRANSPORT_LE)
     }
@@ -82,7 +100,7 @@ object Chronos : BluetoothGattCallback() {
             override fun onScanResult(type: Int, r: android.bluetooth.le.ScanResult) {
                 val name = r.scanRecord?.deviceName ?: r.device.name ?: ""
                 val uuids = r.scanRecord?.serviceUuids.orEmpty()
-                val isChronos = name.contains("chronos", ignoreCase = true) ||
+                val isChronos = name.equals("Chronos", ignoreCase = true) ||
                     uuids.any { it.uuid == Proto.SERVICE || it.uuid == Proto.DFU_FACTORY }
                 if (seen.add(r.device.address) && isChronos) say("seen ${r.device.address} '$name' rssi=${r.rssi}")
                 if (isChronos && address == null) {
@@ -90,6 +108,7 @@ object Chronos : BluetoothGattCallback() {
                     address = r.device.address
                     stop(this)
                     connect()
+                    LinkService.start(app)
                 }
             }
             override fun onScanFailed(errorCode: Int) { say("scan failed $errorCode"); stop(this) }
@@ -209,7 +228,17 @@ object Chronos : BluetoothGattCallback() {
             main.post {
                 g.close()
                 if (gatt === g) gatt = null
+                val was = connected
+                if (was) markSeen()
                 connected = false; inBootloader = false; queue.clear(); inFlight = null
+                // 19 = the disc ended the link itself (it sleeps when still); 8 = link timed out (out of range,
+                // or it powered down without saying goodbye). Anything else while connecting is just a failed attempt.
+                link = when (st) {
+                    19, 0 -> Link.ASLEEP
+                    8 -> Link.OUT_OF_RANGE
+                    else -> if (link == Link.CONNECTING && lastSeen == 0L) Link.NEVER else link.takeIf { it != Link.CONNECTED && it != Link.CONNECTING } ?: Link.ASLEEP
+                }
+                if (was) say(if (link == Link.ASLEEP) "Disc went to sleep" else "Lost contact with disc")
                 changed()
                 // Background reconnect: autoConnect waits for the disc to come back in range.
                 if (address != null && !dfuActive) main.postDelayed({ connect(autoConnect = true) }, 2000)
@@ -257,7 +286,7 @@ object Chronos : BluetoothGattCallback() {
         if (st != BluetoothGatt.GATT_SUCCESS) say("subscribe ${d.characteristic.uuid} failed st=$st")
         if (d.characteristic.uuid == Proto.STATUS) main.post {
             // Last subscription done: the original app bonds here.
-            connected = true; changed()
+            connected = true; link = Link.CONNECTED; markSeen(); changed()
             if (g.device.bondState == BluetoothDevice.BOND_NONE) g.device.createBond()
         }
         done()
@@ -279,7 +308,7 @@ object Chronos : BluetoothGattCallback() {
                 if (battery in 0..25 && status and Proto.ON_CHARGER == 0) say("Low battery: $battery%")
             }
             Proto.FIRMWARE_REV -> firmware = String(v).trim()
-            Proto.STATUS -> {
+            Proto.STATUS -> if (v.isNotEmpty()) {
                 val old = status
                 status = Proto.status(v)
                 deviceBusy = status and Proto.BUSY != 0
@@ -288,8 +317,11 @@ object Chronos : BluetoothGattCallback() {
             Proto.RESPONSE -> when (val e = Proto.parseResponse(v)) {
                 is Proto.Steps -> steps = e
                 is Proto.History -> {
-                    if (e.remaining > 0) history.add(e)
-                    if (e.remaining > 1) send("history", Proto.historicalSteps())
+                    // remaining must count down; cap at 255 (u8) so a confused disc can't loop us forever.
+                    val prev = history.lastOrNull()?.remaining ?: Int.MAX_VALUE
+                    val sane = e.remaining in 1 until prev && history.size < 255
+                    if (sane) history.add(e)
+                    if (sane && e.remaining > 1) send("history", Proto.historicalSteps())
                     else StepLog.save(app, history)
                 }
                 else -> {}

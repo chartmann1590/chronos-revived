@@ -14,6 +14,7 @@ A free, open-source Android app for the **Chronos smart disc**, the little puck 
 - **Notifications on your wrist.** Pick which apps buzz the disc, each with its own light colour (7 colours) and 1–3 pulses. Select all or clear all in one tap. Calls always get through; silent notifications never buzz.
 - **Steps.** Live count plus a week chart, pulled from the disc's own history.
 - **Battery.** Live level, charging state and a 24-hour battery chart.
+- **Always connected.** Runs in the background with a permanent status notification (battery, steps, last seen). It tells you when the disc goes to sleep or out of range, and reconnects by itself.
 - **Taps.** Double tap the crown to play or pause, triple tap to skip, and tap the face repeatedly to ring your phone.
 - **Firmware recovery.** Detects discs stuck in their bootloader and reflashes them over Nordic DFU.
 - **No account, no cloud, no tracking.**
@@ -58,6 +59,7 @@ The Bluetooth protocol was worked out from the last official Android app and its
 | `Chronos.kt` | BLE connection, GATT queue, pairing, reconnects |
 | `NotifyListener.kt` | Forwards chosen notifications to the disc |
 | `Gestures.kt` | Media keys and find-my-phone from tap events |
+| `LinkService.kt` | Background service, status notification, disconnect alerts |
 | `Firmware.kt` | Firmware import and DFU flashing |
 | `Ui.kt` | Compose UI |
 

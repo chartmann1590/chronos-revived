@@ -13,8 +13,8 @@ android {
         applicationId = "com.chronosrevived"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
     // Release key lives outside the repo; keystore.properties is git-ignored.
     val ks = rootProject.file("keystore.properties")
