@@ -13,8 +13,9 @@ android {
         applicationId = "com.chronosrevived"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.1.1"
+        // CI sets these on every release; local builds fall back to a dev version.
+        versionCode = providers.environmentVariable("VERSION_CODE").orNull?.toInt() ?: 1
+        versionName = providers.environmentVariable("VERSION_NAME").orNull ?: "dev"
     }
     // Release key lives outside the repo; keystore.properties is git-ignored.
     val ks = rootProject.file("keystore.properties")

@@ -53,13 +53,13 @@ keyPassword=...
 
 ### Releases
 
-GitHub Actions builds every push (tests plus a debug APK, see `.github/workflows/ci.yml`). To publish a release, bump `versionCode` and `versionName` in `app/build.gradle.kts`, then push a tag:
+Releases are fully automatic. Every push to `main` that touches the app runs `.github/workflows/release.yml`, which:
 
-```sh
-git tag v1.2.0 && git push origin v1.2.0
-```
+1. picks the next version (patch bump from the latest `v*` tag; put `[minor]` or `[major]` in a commit message for a bigger bump),
+2. runs the tests and builds the APK signed with the release key from repo secrets,
+3. creates the tag and a GitHub release with `chronos-revived.apk` and auto-generated notes.
 
-`.github/workflows/release.yml` builds the signed APK and attaches it to a new GitHub release as `chronos-revived.apk`. Signing uses the repo secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`.
+Website and Markdown-only pushes don't release, and `[skip release]` in a commit message skips one. Pull requests run `.github/workflows/ci.yml` (tests plus a debug APK). Local builds are versioned `dev`.
 
 ## How it works
 

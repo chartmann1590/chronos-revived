@@ -1,25 +1,40 @@
 name: Release
 
-# Push a tag like v1.2.0 (or run manually with a tag) to build a signed APK and publish a GitHub release.
+# Every push to main that changes the app ships a release automatically:
+# next version is worked out, the APK is built and signed, and the tag + GitHub release are created.
+# Website/README-only changes don't release. Put [skip release] in a commit message to skip one.
+# Patch version bumps by default; include [minor] or [major] in a commit message to bump those instead.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".github/dependabot.yml"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to release, e.g. v1.2.0 (created from main if it doesn't exist)"
-        required: true
+      bump:
+        description: "Version part to bump"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
 
+# One release at a time, in push order.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history and tags for versioning
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
@@ -27,6 +42,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: true
+
+      - name: Work out next version
+        env:
+          BUMP_INPUT: ${{ github.event.inputs.bump }}
+          COMMITS: ${{ toJSON(github.event.commits.*.message) }}
+        run: |
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          last=${last:-v0.0.0}
+          IFS=. read -r major minor patch <<< "${last#v}"
+          bump=${BUMP_INPUT:-patch}
+          if grep -q '\[major\]' <<< "$COMMITS"; then bump=major; elif grep -q '\[minor\]' <<< "$COMMITS"; then bump=minor; fi
+          case $bump in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            *)     patch=$((patch+1)) ;;
+          esac
+          # versionCode must only ever go up: commit count on main does, and is already past the old manual codes.
+          code=$(( $(git rev-list --count HEAD) + 100 ))
+          echo "VERSION_NAME=$major.$minor.$patch" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "TAG=v$major.$minor.$patch" >> "$GITHUB_ENV"
+          echo "Releasing v$major.$minor.$patch (code $code) after $last"
 
       - name: Set up signing key
         env:
@@ -47,10 +84,11 @@ jobs:
       - name: Test and build signed release
         run: ./gradlew testDebugUnitTest assembleRelease
 
-      - name: Verify signature
+      - name: Verify signature and version
         run: |
-          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+          "$BT/aapt2" dump badging app/build/outputs/apk/release/app-release.apk | head -1 | grep -q "versionName='$VERSION_NAME'"
           cp app/build/outputs/apk/release/app-release.apk chronos-revived.apk
           echo "SHA256=$(sha256sum chronos-revived.apk | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
@@ -58,14 +96,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" chronos-revived.apk --clobber
-          else
-            gh release create "$TAG" chronos-revived.apk --target "$GITHUB_SHA" --title "Chronos Revived ${TAG#v}" \
-              --generate-notes --notes "Download \`chronos-revived.apk\` below and install it on Android 8.0+.
+          gh release create "$TAG" chronos-revived.apk --target "$GITHUB_SHA" --title "Chronos Revived $VERSION_NAME" \
+            --generate-notes --notes "Download \`chronos-revived.apk\` below and install it on Android 8.0+. It updates over any earlier version.
 
           **SHA-256:** \`$SHA256\`"
-          fi
 
       - name: Remove signing key
         if: always()
