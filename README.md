@@ -1,5 +1,7 @@
 # Chronos Revived
 
+[![CI](https://github.com/chartmann1590/chronos-revived/actions/workflows/ci.yml/badge.svg)](https://github.com/chartmann1590/chronos-revived/actions/workflows/ci.yml)
+
 A free, open-source Android app for the **Chronos smart disc**, the little puck that sits under an analog watch and gives it notifications and step tracking. Chronos Wearables shut down along with its app and servers. This app talks to the disc directly over Bluetooth, so nothing depends on them.
 
 **[Website](https://chartmann1590.github.io/chronos-revived/) · [Download the APK](https://github.com/chartmann1590/chronos-revived/releases/latest/download/chronos-revived.apk)**
@@ -48,6 +50,16 @@ storePassword=...
 keyAlias=...
 keyPassword=...
 ```
+
+### Releases
+
+GitHub Actions builds every push (tests plus a debug APK, see `.github/workflows/ci.yml`). To publish a release, bump `versionCode` and `versionName` in `app/build.gradle.kts`, then push a tag:
+
+```sh
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+`.github/workflows/release.yml` builds the signed APK and attaches it to a new GitHub release as `chronos-revived.apk`. Signing uses the repo secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`.
 
 ## How it works
 
