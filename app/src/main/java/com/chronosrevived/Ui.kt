@@ -111,7 +111,7 @@ private fun snapshot() = DiscState(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChronosApp(onScan: () -> Unit, onNotificationAccess: () -> Unit, onInstallFirmware: () -> Unit) {
+fun ChronosApp(onScan: () -> Unit, onNotificationAccess: () -> Unit, onInstallFirmware: () -> Unit, onPickFirmware: () -> Unit) {
     val ctx = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
     DisposableEffect(Unit) {
@@ -200,7 +200,7 @@ fun ChronosApp(onScan: () -> Unit, onNotificationAccess: () -> Unit, onInstallFi
                     Section("Apps that buzz") { AppList(settings, s.connected) }
                     Section("Taps") { Taps(settings) }
                     Section("Battery, last 24 hours") { BatteryChart(s.battery) }
-                    Section("Your disc") { DiscDetails(s) }
+                    Section("Your disc") { DiscDetails(s, onPickFirmware) }
                 }
                 Spacer(Modifier.height(40.dp))
             }
@@ -719,7 +719,7 @@ private fun TapRow(title: String, detail: String, on: Boolean, onChange: (Boolea
 // ---------------------------------------------------------------- details
 
 @Composable
-private fun DiscDetails(s: DiscState) {
+private fun DiscDetails(s: DiscState, onPickFirmware: () -> Unit) {
     var showLog by remember { mutableStateOf(false) }
     Detail("Firmware", s.firmware.ifEmpty { "Unknown until connected" })
     Detail("Bluetooth address", s.address ?: "")
@@ -730,6 +730,10 @@ private fun DiscDetails(s: DiscState) {
             Text(if (s.syncing) "Syncing..." else "Sync now", style = body(14, 600, if (s.connected) C.brass else C.brassDim))
         }
         TextButton(onClick = { Chronos.forget() }) { Text("Forget this disc", style = body(14, 600, C.warn)) }
+    }
+    // Any Chronos DFU package (.zip) or the original Chronos APK; the disc restarts into its bootloader first.
+    TextButton(onClick = onPickFirmware, enabled = s.connected && s.dfu < 0) {
+        Text("Install firmware from a file", style = body(14, 600, if (s.connected) C.brass else C.brassDim))
     }
     TextButton(onClick = { showLog = !showLog }) {
         Text(if (showLog) "Hide connection log" else "Show connection log", style = body(14, 600, C.muted))

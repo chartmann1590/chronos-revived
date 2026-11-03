@@ -44,10 +44,24 @@ object Firmware {
         }
     } catch (e: java.io.IOException) { null }
 
+    /** Installs the imported firmware whatever mode the disc is in (normal, or stuck in its bootloader). */
+    fun start(ctx: Context) {
+        val addr = Chronos.address ?: return
+        if (Chronos.inBootloader || !Chronos.connected) { install(ctx); return }
+        // The library can't restart the disc and then use the vendor UUIDs in one run, so restart it here;
+        // the normal reconnect finds it in its bootloader (same address) and the install starts from there.
+        Chronos.installOnBootloader = true
+        Chronos.jumpToBootloader()
+        Chronos.say("Restarting the disc into its bootloader")
+    }
+
+    private var appCtx: Context? = null
+
     fun install(ctx: Context) {
         val addr = Chronos.address ?: return
         if (!available(ctx)) { Chronos.say("No firmware imported yet"); return }
         val app = ctx.applicationContext
+        appCtx = app
         Chronos.dfuActive = true
         Chronos.dfuProgress = 0
         Chronos.release()
@@ -56,12 +70,15 @@ object Firmware {
         Handler(Looper.getMainLooper()).postDelayed({
             DfuServiceInitiator(addr)
                 .setDeviceName("Chronos")
-                .setKeepBond(false)
+                // A bootloader entered from a paired disc reuses that pairing and refuses commands on an
+                // unencrypted link; keeping the bond makes the library encrypt first. Factory discs aren't paired.
+                .setKeepBond(bonded(app, addr))
                 .setDisableNotification(true)
                 .setForeground(false)
                 .setPacketsReceiptNotificationsEnabled(true)
                 .setPacketsReceiptNotificationsValue(12)
                 .setCustomUuidsForLegacyDfu(u("1530"), u("1531"), u("1532"), u("1534"))
+                .setNumberOfRetries(3) // first connect right after we let go of the link sometimes fails with 133
                 .setZip(cached(app).absolutePath)
                 .start(app, DfuService::class.java)
             Chronos.say("Firmware install started")
@@ -86,12 +103,19 @@ object Firmware {
             finish("Firmware install error $error: $message", false)
     }
 
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun bonded(ctx: Context, addr: String) =
+        ctx.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.getRemoteDevice(addr)?.bondState ==
+            android.bluetooth.BluetoothDevice.BOND_BONDED
+
     private fun finish(msg: String, ok: Boolean) {
         Chronos.say(msg)
         Chronos.dfuActive = false
         Chronos.dfuProgress = -1
+        Chronos.refreshServices = true
         val addr = Chronos.address ?: return
-        if (ok) {
+        // A bootloader at the app's own address (entered from a paired disc) keeps it; a factory one is at app + 1.
+        if (ok && appCtx?.let { bonded(it, addr) } != true) {
             Chronos.address = appAddress(addr)
             Chronos.say("Disc now expected at ${Chronos.address}")
         }

@@ -14,6 +14,11 @@ object Proto {
     val BATTERY_LEVEL = uuid("00002a19-0000-1000-8000-00805f9b34fb")
     val INFO_SVC = uuid("0000180a-0000-1000-8000-00805f9b34fb")
     val FIRMWARE_REV = uuid("00002a26-0000-1000-8000-00805f9b34fb")
+    // Standard Nordic legacy DFU service in the app firmware; writing 01 04 restarts the disc into its bootloader,
+    // which keeps the same address and answers with the vendor beb8153x service.
+    val DFU_APP = uuid("00001530-1212-efde-1523-785feabcd123")
+    val DFU_CONTROL = uuid("00001531-1212-efde-1523-785feabcd123")
+    val JUMP_TO_BOOTLOADER = b(0x01, 0x04)
     val CCCD = uuid("00002902-0000-1000-8000-00805f9b34fb")
 
     // Status bits

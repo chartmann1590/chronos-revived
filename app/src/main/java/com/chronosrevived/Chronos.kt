@@ -102,6 +102,14 @@ object Chronos : BluetoothGattCallback() {
         val scanner = adapter?.bluetoothLeScanner
         if (scanner == null || !adapter.isEnabled) { say("Bluetooth is off"); return }
         if (scanning) return
+        // Already paired (e.g. after "Forget"): use it directly. A disc in its bootloader after a requested
+        // restart only sends directed advertising to its bonded phone, which no scan can see.
+        if (address == null) adapter.bondedDevices.firstOrNull { it.name.equals("Chronos", ignoreCase = true) }?.let {
+            say("Using paired disc ${it.address}")
+            address = it.address
+            connect(); LinkService.start(app)
+            return
+        }
         // A recent classic discovery makes Android show the disc's pairing request as a dialog
         // instead of burying it in the notification shade (where it times out after 30s).
         adapter.startDiscovery()
@@ -113,7 +121,8 @@ object Chronos : BluetoothGattCallback() {
                 val uuids = r.scanRecord?.serviceUuids.orEmpty()
                 val isChronos = name.equals("Chronos", ignoreCase = true) ||
                     uuids.any { it.uuid == Proto.SERVICE || it.uuid == Proto.DFU_FACTORY }
-                if (seen.add(r.device.address) && isChronos) say("seen ${r.device.address} '$name' rssi=${r.rssi}")
+                if (seen.add(r.device.address)) android.util.Log.i("ChronosScan", "${r.device.address} '$name' rssi=${r.rssi} uuids=$uuids")
+                if (isChronos && seen.size > 0) say("seen ${r.device.address} '$name' rssi=${r.rssi}")
                 if (isChronos && address == null) {
                     say("Picked $name ${r.device.address}")
                     address = r.device.address
@@ -218,6 +227,27 @@ object Chronos : BluetoothGattCallback() {
         send("current steps", Proto.currentSteps())
     }
 
+    /**
+     * Android caches a paired device's services, so after a firmware change (bootloader <-> app) it keeps
+     * showing the old ones. Set whenever the firmware may have changed; the next connection rediscovers.
+     */
+    var refreshServices = false
+
+    /** Set while a firmware install waits for the disc to come back in its bootloader. */
+    var installOnBootloader = false
+
+    @Suppress("DEPRECATION")
+    fun jumpToBootloader() {
+        subscribe(Proto.DFU_APP, Proto.DFU_CONTROL)
+        enqueue("jump to bootloader") {
+            val c = char(Proto.DFU_APP, Proto.DFU_CONTROL) ?: return@enqueue false
+            say("> jump to bootloader")
+            c.value = Proto.JUMP_TO_BOOTLOADER
+            c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            gatt!!.writeCharacteristic(c)
+        }
+    }
+
     fun fetchHistory() { history.clear(); send("history", Proto.historicalSteps()) }
 
     /** Full sync on a fast connection interval: battery, status, steps, then the stored step history. */
@@ -255,7 +285,14 @@ object Chronos : BluetoothGattCallback() {
         if (st == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
             // Fast interval from the first packet: service discovery and the initial sync ride on it.
             g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-            main.postDelayed({ g.discoverServices() }, 300)
+            main.postDelayed({
+                if (refreshServices) {
+                    refreshServices = false
+                    try { g.javaClass.getMethod("refresh").invoke(g); say("cleared cached services") }
+                    catch (e: Exception) { say("couldn't clear cached services: ${e.message}") }
+                }
+                g.discoverServices()
+            }, 300)
         } else if (newState == BluetoothProfile.STATE_DISCONNECTED || st != BluetoothGatt.GATT_SUCCESS) {
             main.post {
                 g.close()
@@ -282,9 +319,13 @@ object Chronos : BluetoothGattCallback() {
     override fun onServicesDiscovered(g: BluetoothGatt, st: Int) {
         val svcs = g.services.joinToString { it.uuid.toString().substring(0, 8) }
         say("services st=$st: $svcs")
+        g.services.forEach { sv -> android.util.Log.i("ChronosGatt", "svc ${sv.uuid}: " + sv.characteristics.joinToString { "${it.uuid} p=${it.properties}" }) }
         if (g.getService(Proto.DFU_FACTORY) != null) {
             say("!! Disc is in bootloader/DFU mode (no app firmware). Tap Install firmware.")
-            main.post { inBootloader = true; changed() }
+            main.post {
+                inBootloader = true; refreshServices = true; changed()
+                if (installOnBootloader) { installOnBootloader = false; Firmware.install(app) }
+            }
             return
         }
         // Same order as the original app: battery, response, status notifications, then bond.

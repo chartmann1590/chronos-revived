@@ -14,7 +14,7 @@ class MainActivity : ComponentActivity() {
     // Firmware comes from the user's copy of the original Chronos app; we never ship it.
     private val pickFirmware = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
-        if (Firmware.importFrom(this, uri)) Firmware.install(this)
+        if (Firmware.importFrom(this, uri)) Firmware.start(this)
         else android.widget.Toast.makeText(this, "That file doesn't contain Chronos firmware. Pick the original Chronos APK.", android.widget.Toast.LENGTH_LONG).show()
     }
 
@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
                 onInstallFirmware = {
                     if (Firmware.available(this)) Firmware.install(this) else pickFirmware.launch(arrayOf("*/*"))
                 },
+                onPickFirmware = { pickFirmware.launch(arrayOf("*/*")) },
             )
         }
     }
