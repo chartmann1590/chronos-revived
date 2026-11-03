@@ -30,27 +30,36 @@ object StepLog {
     }
 }
 
-/** Battery readings over time ("epochMillis,percent,statusBits"), to see whether charging actually raises the level. */
+/**
+ * Battery readings over time ("epochMillis,percent,statusBits,millivolts"), to see whether charging actually
+ * raises the level. Lines from before v1.2 have no millivolts column.
+ */
 object BatteryLog {
+    data class Reading(val t: Long, val pct: Int, val status: Int, val mv: Int)
+
     private fun file(ctx: Context) = File(ctx.filesDir, "battery.csv")
 
-    fun add(ctx: Context, pct: Int, status: Int) {
+    fun add(ctx: Context, pct: Int, status: Int, mv: Int) {
+        if (pct < 0) return
         val f = file(ctx)
-        val last = if (f.exists()) f.readLines().lastOrNull()?.split(',') else null
+        val last = if (f.exists()) f.readLines().lastOrNull()?.let(::parse) else null
         val now = System.currentTimeMillis()
         // Keep a point when anything changes, otherwise one every 5 minutes.
-        if (last != null && last[1].toInt() == pct && last[2].toInt() == status && now - last[0].toLong() < 300_000) return
-        f.appendText("$now,$pct,$status\n")
+        if (last != null && last.pct == pct && last.status == status && last.mv == mv && now - last.t < 300_000) return
+        f.appendText("$now,$pct,$status,$mv\n")
     }
 
-    /** Readings from the last [hours] hours as (millis, percent, status). */
-    fun recent(ctx: Context, hours: Int = 24): List<Triple<Long, Int, Int>> {
+    fun parse(l: String): Reading? {
+        val p = l.split(','); if (p.size !in 3..4) return null
+        return try { Reading(p[0].toLong(), p[1].toInt(), p[2].toInt(), p.getOrNull(3)?.toInt() ?: -1) }
+        catch (e: NumberFormatException) { null }
+    }
+
+    /** Readings from the last [hours] hours. */
+    fun recent(ctx: Context, hours: Int = 24): List<Reading> {
         val f = file(ctx)
         if (!f.exists()) return emptyList()
         val from = System.currentTimeMillis() - hours * 3_600_000L
-        return f.readLines().mapNotNull { l ->
-            val p = l.split(','); if (p.size != 3) return@mapNotNull null
-            Triple(p[0].toLong(), p[1].toInt(), p[2].toInt()).takeIf { it.first >= from }
-        }
+        return f.readLines().mapNotNull(::parse).filter { it.t >= from }
     }
 }

@@ -24,6 +24,14 @@ class ProtoTest {
         assert(Proto.parseResponse(b(0x9C)) is Proto.Unknown)
     }
 
+    @Test fun parsesExtendedStatus() {
+        val v = byteArrayOf(0x04, 0x00, 0x0E, 0x42, 0x00, 0x00, 0x01, 0x2C) // on charger, 3650 mV, charger 300
+        assertEquals(Proto.Power(3650, 300), Proto.power(v))
+        assertEquals(4, Proto.status(v))
+        assertEquals(null, Proto.power(byteArrayOf(0x04, 0x00)))
+        assertArrayEquals(byteArrayOf(0xA0.toByte(), 1, 1), Proto.extendedStatus(true))
+    }
+
     @Test fun appAddressIsBootloaderMinusOne() {
         assertEquals("F3:33:9F:56:DD:AA", Firmware.appAddress("F3:33:9F:56:DD:AB"))
         assertEquals("F3:33:9F:56:FF:FF", Firmware.appAddress("F3:33:9F:56:00:00"))

@@ -36,6 +36,8 @@ object Proto {
     fun historicalSteps() = b(0x9D, 0)
     fun gesture(g: Gesture, on: Boolean) = b(g.op, 1, if (on) 1 else 0)
     val PLAY = b(0x95, 4, 0x61, 1, 0x40, 1)
+    /** Firmware's hidden "extended status" mode (opcode A0): status grows to 8 bytes and is pushed every 0.5 s. */
+    fun extendedStatus(on: Boolean) = b(0xA0, 1, if (on) 1 else 0)
 
     /** LED program for a notification. pattern 1..3 = number of flashes/pulses. */
     fun light(color: Color, pattern: Int): ByteArray {
@@ -64,6 +66,14 @@ object Proto {
     private fun u8(v: ByteArray, i: Int) = v[i].toInt() and 0xFF
     private fun be16(v: ByteArray, i: Int) = (u8(v, i) shl 8) or u8(v, i + 1)
     private fun be32(v: ByteArray, i: Int) = (be16(v, i).toLong() shl 16) or be16(v, i + 2).toLong()
+
+    /**
+     * Extended status tail (firmware 0x1a9e4 / 0x1cece): the disc's own battery measurement.
+     * Bytes 2-3 = averaged cell millivolts (raw * 0x4571 >> 12, 4-sample mean), 6-7 = latest raw ADC count.
+     * Bytes 4-5 come from the accelerometer driver and aren't used here.
+     */
+    data class Power(val mv: Int, val adc: Int)
+    fun power(v: ByteArray): Power? = if (v.size >= 8) Power(be16(v, 2), be16(v, 6)) else null
 
     fun status(v: ByteArray) = u8(v, 0) or (if (v.size > 1) u8(v, 1) shl 8 else 0)
 

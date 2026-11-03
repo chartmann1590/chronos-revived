@@ -32,6 +32,11 @@ object Chronos : BluetoothGattCallback() {
     var battery = -1; private set
     var status = 0; private set
     var firmware = ""; private set
+    /** Cell millivolts and raw battery ADC count from extended status; -1 until the disc sends them. */
+    var millivolts = -1; private set
+    var batteryAdc = -1; private set
+    /** True from the start of a sync until the step history has been read off the disc. */
+    var syncing = false; private set
     var steps: Proto.Steps? = null; private set
     val history = mutableListOf<Proto.History>()
 
@@ -77,7 +82,13 @@ object Chronos : BluetoothGattCallback() {
 
     fun connect(autoConnect: Boolean = false) {
         val addr = address ?: return
-        if (gatt != null || dfuActive) return
+        if (dfuActive) return
+        // A pending autoConnect only fires on the stack's slow background scan; when someone is waiting
+        // (app opened, Sync tapped) swap it for a direct connect, which finds the disc in about a second.
+        if (gatt != null) {
+            if (connected || autoConnect || link == Link.CONNECTING) return
+            gatt?.close(); gatt = null
+        }
         val adapter = (app.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter ?: return
         if (!adapter.isEnabled) { say("Bluetooth is off"); link = Link.BLUETOOTH_OFF; changed(); return }
         if (link == Link.NEVER || link == Link.BLUETOOTH_OFF || !autoConnect) { link = Link.CONNECTING; changed() }
@@ -157,7 +168,8 @@ object Chronos : BluetoothGattCallback() {
     private fun next() {
         if (inFlight != null || queue.isEmpty()) return
         if (bonding()) { retryLater(1000); return }
-        if (deviceBusy) { retryLater(2500) { deviceBusy = false }; return }
+        // Busy clears within a few hundred ms (extended status reports it twice a second).
+        if (deviceBusy) { retryLater(300) { deviceBusy = false }; return }
         val (name, op) = queue.removeFirst()
         inFlight = name
         if (!op()) { say("op $name failed to start"); inFlight = null; next(); return }
@@ -208,6 +220,24 @@ object Chronos : BluetoothGattCallback() {
 
     fun fetchHistory() { history.clear(); send("history", Proto.historicalSteps()) }
 
+    /** Full sync on a fast connection interval: battery, status, steps, then the stored step history. */
+    fun sync() = main.post {
+        if (!connected && inFlight == null && queue.isEmpty() && gatt == null) { connect(); return@post }
+        syncing = true; changed()
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        refresh(); fetchHistory()
+        main.removeCallbacks(syncTimeout); main.postDelayed(syncTimeout, 20_000)
+    }
+    private val syncTimeout = Runnable { syncDone() }
+    private fun syncDone() {
+        main.removeCallbacks(syncTimeout)
+        if (!syncing) return
+        syncing = false
+        // Back to a relaxed interval so the always-on link doesn't drain the disc.
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+        changed()
+    }
+
     var buzzCount = 0; private set
     var lastBuzz = Proto.Color.BLUE to 2; private set
 
@@ -223,7 +253,9 @@ object Chronos : BluetoothGattCallback() {
     override fun onConnectionStateChange(g: BluetoothGatt, st: Int, newState: Int) {
         say("connection status=$st state=$newState")
         if (st == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
-            main.postDelayed({ g.discoverServices() }, 600)
+            // Fast interval from the first packet: service discovery and the initial sync ride on it.
+            g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+            main.postDelayed({ g.discoverServices() }, 300)
         } else if (newState == BluetoothProfile.STATE_DISCONNECTED || st != BluetoothGatt.GATT_SUCCESS) {
             main.post {
                 g.close()
@@ -231,6 +263,7 @@ object Chronos : BluetoothGattCallback() {
                 val was = connected
                 if (was) markSeen()
                 connected = false; inBootloader = false; queue.clear(); inFlight = null
+                syncing = false; main.removeCallbacks(syncTimeout)
                 // 19 = the disc ended the link itself (it sleeps when still); 8 = link timed out (out of range,
                 // or it powered down without saying goodbye). Anything else while connecting is just a failed attempt.
                 link = when (st) {
@@ -258,14 +291,14 @@ object Chronos : BluetoothGattCallback() {
         subscribe(Proto.BATTERY_SVC, Proto.BATTERY_LEVEL)
         subscribe(Proto.SERVICE, Proto.RESPONSE)
         subscribe(Proto.SERVICE, Proto.STATUS)
+        send("extended status", Proto.extendedStatus(true))
         read(Proto.INFO_SVC, Proto.FIRMWARE_REV)
         send("brightness max", Proto.brightness(0xFF))
         // The disc only reports taps for features that are switched on (original app did this on connect).
         val st = Settings(app)
         send("gesture media", Proto.gesture(Proto.Gesture.MEDIA, st.mediaTaps))
         send("gesture find", Proto.gesture(Proto.Gesture.FIND_PHONE, st.findPhone))
-        refresh()
-        fetchHistory()
+        sync()
     }
 
     @Suppress("DEPRECATION")
@@ -303,7 +336,7 @@ object Chronos : BluetoothGattCallback() {
         when (uuid) {
             Proto.BATTERY_LEVEL -> {
                 battery = v.firstOrNull()?.toInt()?.and(0xFF) ?: -1
-                if (battery >= 0) BatteryLog.add(app, battery, status)
+                if (battery >= 0) BatteryLog.add(app, battery, status, millivolts)
                 if (battery >= 0) prefs.edit().putInt("lastBattery", battery).putLong("lastBatteryAt", System.currentTimeMillis()).apply()
                 if (battery in 0..25 && status and Proto.ON_CHARGER == 0) say("Low battery: $battery%")
             }
@@ -312,6 +345,10 @@ object Chronos : BluetoothGattCallback() {
                 val old = status
                 status = Proto.status(v)
                 deviceBusy = status and Proto.BUSY != 0
+                Proto.power(v)?.let { p ->
+                    if (p.mv != millivolts) BatteryLog.add(app, battery, status, p.mv)
+                    millivolts = p.mv; batteryAdc = p.adc
+                }
                 Gestures.onStatus(app, old, status)
             }
             Proto.RESPONSE -> when (val e = Proto.parseResponse(v)) {
@@ -322,13 +359,16 @@ object Chronos : BluetoothGattCallback() {
                     val sane = e.remaining in 1 until prev && history.size < 255
                     if (sane) history.add(e)
                     if (sane && e.remaining > 1) send("history", Proto.historicalSteps())
-                    else StepLog.save(app, history)
+                    else { StepLog.save(app, history); syncDone() }
                 }
                 else -> {}
             }
         }
-        say("< ${uuidShort(uuid)} ${Proto.hex(v)}")
+        val line = "< ${uuidShort(uuid)} ${Proto.hex(v)}"
+        if (line != lastRx) say(line) else changed()
+        lastRx = line
     } }
 
+    private var lastRx = ""
     private fun uuidShort(u: UUID) = u.toString().substring(4, 8)
 }

@@ -15,7 +15,8 @@ A free, open-source Android app for the **Chronos smart disc**, the little puck 
 
 - **Notifications on your wrist.** Pick which apps buzz the disc, each with its own light colour (7 colours) and 1–3 pulses. Select all or clear all in one tap. Calls always get through; silent notifications never buzz.
 - **Steps.** Live count plus a week chart, pulled from the disc's own history.
-- **Battery.** Live level, charging state and a 24-hour battery chart.
+- **Battery.** Live level, the cell's real voltage (read through a hidden firmware status mode), charging state and a 24-hour chart.
+- **Fast sync.** About 2 seconds from opening the app to fresh steps and battery, on a high-speed Bluetooth link that relaxes again afterwards.
 - **Always connected.** Runs in the background with a permanent status notification (battery, steps, last seen). It tells you when the disc goes to sleep or out of range, and reconnects by itself.
 - **Taps.** Double tap the crown to play or pause, triple tap to skip, and tap the face repeatedly to ring your phone.
 - **Firmware recovery.** Detects discs stuck in their bootloader and reflashes them over Nordic DFU.
@@ -77,7 +78,7 @@ The Bluetooth protocol was worked out from the last official Android app and its
 
 ## Known limits
 
-- **Charging is controlled by hardware.** The disc's charger chip works on its own and the firmware has no way to force it. If the battery stays at 0% on the charger, clean the contacts; if that doesn't help, the cell probably needs replacing.
+- **Charging is controlled by hardware.** The disc's charger chip works on its own and the firmware has no way to force it. The app shows the cell voltage the disc measures. If it reads below about 2.5 V, the charger won't start and the cell needs replacing. Discs that sat unused for years usually end up there.
 - Android only for now.
 
 ## Disclaimer

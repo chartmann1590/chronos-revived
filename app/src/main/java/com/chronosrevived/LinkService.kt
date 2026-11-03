@@ -44,7 +44,7 @@ class LinkService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_SYNC -> if (Chronos.connected) { Chronos.refresh(); Chronos.fetchHistory() } else Chronos.connect()
+            ACTION_SYNC -> Chronos.sync()
         }
         return START_STICKY
     }
@@ -114,7 +114,7 @@ class LinkService : Service() {
         if (c.dfuActive) return "Chronos: installing firmware" to (if (c.dfuProgress >= 0) "${c.dfuProgress}%" else "Starting…")
         if (c.connected) {
             val bits = mutableListOf<String>()
-            if (c.battery >= 0) bits += "Battery ${c.battery}%" + when {
+            if (c.battery >= 0) bits += "Battery ${c.battery}%" + (if (c.millivolts > 0) " (%.2f V)".format(c.millivolts / 1000f) else "") + when {
                 c.status and Proto.CHARGING != 0 -> ", charging"
                 c.status and Proto.ON_CHARGER != 0 -> ", on charger"
                 else -> ""

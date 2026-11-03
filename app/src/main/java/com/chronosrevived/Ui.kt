@@ -99,12 +99,14 @@ private data class DiscState(
     val address: String?, val connected: Boolean, val battery: Int, val status: Int, val firmware: String,
     val steps: Int?, val scanning: Boolean, val bootloader: Boolean, val bonding: Boolean, val dfu: Int,
     val buzzCount: Int, val lastBuzz: Pair<Proto.Color, Int>, val link: Chronos.Link,
+    val mv: Int, val adc: Int, val syncing: Boolean,
 )
 
 private fun snapshot() = DiscState(
     Chronos.address, Chronos.connected, Chronos.battery, Chronos.status, Chronos.firmware,
     Chronos.steps?.total, Chronos.scanning, Chronos.inBootloader, Chronos.bonding, Chronos.dfuProgress,
     Chronos.buzzCount, Chronos.lastBuzz, Chronos.link,
+    Chronos.millivolts, Chronos.batteryAdc, Chronos.syncing,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,16 +144,16 @@ fun ChronosApp(onScan: () -> Unit, onNotificationAccess: () -> Unit, onInstallFi
     }
 
     // Pull down to sync: battery, status and steps straight from the disc.
+    // The spinner stays up for the real sync, until the step history is off the disc.
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val pull = rememberPullToRefreshState()
     PullToRefreshBox(
-        isRefreshing = refreshing,
+        isRefreshing = refreshing || s.syncing,
         onRefresh = {
             refreshing = true
-            if (Chronos.connected) { Chronos.refresh(); Chronos.fetchHistory() }
-            else if (Chronos.address == null) onScan() else Chronos.connect()
-            scope.launch { delay(1600); refreshing = false }
+            if (Chronos.address == null) onScan() else Chronos.sync()
+            scope.launch { delay(1200); refreshing = false }
         },
         state = pull,
         modifier = Modifier.fillMaxSize().background(C.dial),
@@ -352,14 +354,21 @@ private fun lastSeenPhrase(): String? {
     return "Last seen $ago" + (if (pct != null) " with $pct% battery." else ".") + " It reconnects by itself."
 }
 
+private fun volts(mv: Int) = "%.2f V".format(mv / 1000f)
+private const val DEAD_CELL_MV = 2500
+
 private fun batteryPhrase(s: DiscState): String {
     if (s.battery < 0) return "Reading battery..."
+    val v = if (s.mv > 0) " (${volts(s.mv)})" else ""
+    // Li-ion charger chips refuse a cell below roughly 2.5 V; the disc then runs off the cradle alone.
+    if (s.mv in 0 until DEAD_CELL_MV)
+        return "The cell reads ${volts(s.mv)}; a healthy one is 3.0 to 4.2 V. That's too flat for the charger to start, so the cell needs replacing."
     return when {
         s.status and Proto.CHARGING != 0 -> "Battery ${s.battery}%, charging"
-        s.status and Proto.ON_CHARGER != 0 && s.battery >= 95 -> "Battery ${s.battery}%, full and resting on the charger"
-        s.status and Proto.ON_CHARGER != 0 -> "Battery ${s.battery}%. It's on the charger but not taking charge; check the contacts."
-        s.battery <= 25 -> "Battery ${s.battery}%, time to charge soon"
-        else -> "Battery ${s.battery}%"
+        s.status and Proto.ON_CHARGER != 0 && s.battery >= 95 -> "Battery ${s.battery}%$v, full and resting on the charger"
+        s.status and Proto.ON_CHARGER != 0 -> "Battery ${s.battery}%$v. On the charger but not taking charge."
+        s.battery <= 25 -> "Battery ${s.battery}%$v, time to charge soon"
+        else -> "Battery ${s.battery}%$v"
     }
 }
 
@@ -714,9 +723,11 @@ private fun DiscDetails(s: DiscState) {
     var showLog by remember { mutableStateOf(false) }
     Detail("Firmware", s.firmware.ifEmpty { "Unknown until connected" })
     Detail("Bluetooth address", s.address ?: "")
+    if (s.mv >= 0) Detail("Cell voltage", volts(s.mv))
+    if (s.adc >= 0) Detail("Battery ADC (raw)", s.adc.toString())
     Row(Modifier.padding(top = 8.dp)) {
-        TextButton(onClick = { Chronos.refresh(); Chronos.fetchHistory() }, enabled = s.connected) {
-            Text("Sync now", style = body(14, 600, if (s.connected) C.brass else C.brassDim))
+        TextButton(onClick = { Chronos.sync() }, enabled = s.connected && !s.syncing) {
+            Text(if (s.syncing) "Syncing..." else "Sync now", style = body(14, 600, if (s.connected) C.brass else C.brassDim))
         }
         TextButton(onClick = { Chronos.forget() }) { Text("Forget this disc", style = body(14, 600, C.warn)) }
     }
@@ -753,15 +764,23 @@ private fun BatteryChart(current: Int) {
     }
     val draw = remember { Animatable(0f) }
     LaunchedEffect(Unit) { draw.animateTo(1f, tween(1200, easing = FastOutSlowInEasing)) }
-    val t0 = points.first().first; val span = maxOf(points.last().first - t0, 1L)
-    val first = points.first().second; val last = points.last().second
+    val t0 = points.first().t; val span = maxOf(points.last().t - t0, 1L)
+    // Voltage moves before the percentage does (0% covers everything below ~3.5 V), so chart it when the disc reports it.
+    val withMv = points.filter { it.mv >= 0 }
+    val useMv = withMv.size >= 2
+    val level: (BatteryLog.Reading) -> Float =
+        if (useMv) { p -> ((p.mv - 3000) / 1200f).coerceIn(0f, 1f) } else { p -> p.pct / 100f }
+    val shown = if (useMv) withMv else points
+    val (first, last) = shown.first() to shown.last()
+    val fmt: (BatteryLog.Reading) -> String = if (useMv) { p -> volts(p.mv) } else { p -> "${p.pct}%" }
+    val up = level(last) > level(first)
     Text(
         when {
-            last > first -> "Up from $first% to $last%. It's taking a charge."
-            last < first -> "Down from $first% to $last%."
-            else -> "Holding at $last%."
+            up -> "Up from ${fmt(first)} to ${fmt(last)}. It's taking a charge."
+            level(last) < level(first) -> "Down from ${fmt(first)} to ${fmt(last)}."
+            else -> "Holding at ${fmt(last)}."
         },
-        style = body(14, 500, if (last > first) C.lume else C.muted),
+        style = body(14, 500, if (up) C.lume else C.muted),
     )
     Spacer(Modifier.height(12.dp))
     Canvas(Modifier.fillMaxWidth().height(110.dp)) {
@@ -770,15 +789,16 @@ private fun BatteryChart(current: Int) {
             drawLine(C.muted.copy(alpha = 0.18f), Offset(0f, size.height * (1 - f)), Offset(size.width, size.height * (1 - f)), 1.dp.toPx())
         }
         val path = Path()
-        points.forEachIndexed { i, (t, pct, status) ->
-            val x = size.width * (t - t0) / span * draw.value
-            val y = size.height * (1 - pct / 100f)
+        shown.forEachIndexed { i, p ->
+            val x = size.width * (p.t - t0) / span * draw.value
+            val y = size.height * (1 - level(p))
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             // Brass ticks along the bottom mark readings taken on the charger.
-            if (status and Proto.ON_CHARGER != 0) drawLine(C.brass.copy(alpha = 0.5f), Offset(x, size.height), Offset(x, size.height - 4.dp.toPx()), 2.dp.toPx())
+            if (p.status and Proto.ON_CHARGER != 0) drawLine(C.brass.copy(alpha = 0.5f), Offset(x, size.height), Offset(x, size.height - 4.dp.toPx()), 2.dp.toPx())
         }
         drawPath(path, C.lume, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
     Spacer(Modifier.height(6.dp))
-    Text("Brass marks show when it sat on the charger.", style = body(12, 400, C.muted))
+    Text(if (useMv) "Scale 3.0 to 4.2 V. Brass marks show when it sat on the charger." else "Brass marks show when it sat on the charger.",
+        style = body(12, 400, C.muted))
 }

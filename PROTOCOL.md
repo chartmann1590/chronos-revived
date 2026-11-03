@@ -9,8 +9,9 @@ Recovered from the last official Android app (`com.wearchronos.chronos` v1.0, Ma
 - TI DRV2605 haptic driver on I²C `0x5A`; its enable pin is P0.12. Vibration "patterns" are DRV2605 library effect IDs.
 - I²C: SCL P0.09, SDA P0.08, 100 kHz.
 - Battery voltage: ADC AIN7, `mV = raw * 0x4571 >> 12`, averaged over 4 samples.
-- Charger: standalone chip. P0.07 = power present (status bit 2). "Charging" (status bit 1) is inferred by timing pulses
-  on the charger's status line (period 2328–3309 RTC ticks). **The firmware has no way to enable or force charging.**
+- Charger: standalone chip. P0.07 = power present (status 0x0004). "Charging" (status 0x0002) is inferred by timing pulses
+  on the charger's status line (period 2328–3309 RTC ticks). **The firmware has no way to enable or force charging**;
+  the charger chip decides on its own, from the cell voltage.
 
 ## Advertising
 
@@ -56,7 +57,24 @@ drops the link if it isn't accepted within ~30 s.
 | `90 0A 40 01 e1 e2 e3 …` | vibration program: DRV2605 effect IDs (`2F 2F`, `0E 8F 0E`, `31 82 31 82 31`) |
 | `95 04 61 01 40 01` | play the programmed LED + vibration now |
 
-Further opcodes handled by firmware but unused by the official app: `70 71 72 92 96 9E A0`.
+| `A0 01 EN` | extended status mode (EN=1), unused by the official app; see below |
+
+Further opcodes handled by firmware but unused by the official app: `70` (clears step storage), `71 72 92 96`,
+`9E` (`reset_databases`).
+
+### Extended status (`A0 01 01`)
+
+Status notifications grow from 2 to 8 bytes and are pushed whenever they change:
+
+| Bytes | Meaning |
+|---|---|
+| 0–1 | status bits as above |
+| 2–3 | battery millivolts, BE: 4-sample mean of `raw * 0x4571 >> 12` (the same value the 0x2A19 percentage comes from) |
+| 4–5 | value from the accelerometer driver (not decoded) |
+| 6–7 | latest raw battery ADC count, BE |
+
+On the test disc this reported `00 1E … 00 07`: 7 ADC counts, **30 mV**. The cell was effectively at 0 V, which is
+why it read 0% and the charger chip never started (Li-ion chargers won't charge a cell that flat).
 
 ## Firmware update
 
