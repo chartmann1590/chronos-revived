@@ -121,8 +121,7 @@ object Chronos : BluetoothGattCallback() {
                 val uuids = r.scanRecord?.serviceUuids.orEmpty()
                 val isChronos = name.equals("Chronos", ignoreCase = true) ||
                     uuids.any { it.uuid == Proto.SERVICE || it.uuid == Proto.DFU_FACTORY }
-                if (seen.add(r.device.address)) android.util.Log.i("ChronosScan", "${r.device.address} '$name' rssi=${r.rssi} uuids=$uuids")
-                if (isChronos && seen.size > 0) say("seen ${r.device.address} '$name' rssi=${r.rssi}")
+                if (seen.add(r.device.address) && isChronos) say("seen ${r.device.address} '$name' rssi=${r.rssi}")
                 if (isChronos && address == null) {
                     say("Picked $name ${r.device.address}")
                     address = r.device.address
@@ -319,7 +318,6 @@ object Chronos : BluetoothGattCallback() {
     override fun onServicesDiscovered(g: BluetoothGatt, st: Int) {
         val svcs = g.services.joinToString { it.uuid.toString().substring(0, 8) }
         say("services st=$st: $svcs")
-        g.services.forEach { sv -> android.util.Log.i("ChronosGatt", "svc ${sv.uuid}: " + sv.characteristics.joinToString { "${it.uuid} p=${it.properties}" }) }
         if (g.getService(Proto.DFU_FACTORY) != null) {
             say("!! Disc is in bootloader/DFU mode (no app firmware). Tap Install firmware.")
             main.post {

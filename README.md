@@ -19,7 +19,7 @@ A free, open-source Android app for the **Chronos smart disc**, the little puck 
 - **Fast sync.** About 2 seconds from opening the app to fresh steps and battery, on a high-speed Bluetooth link that relaxes again afterwards.
 - **Always connected.** Runs in the background with a permanent status notification (battery, steps, last seen). It tells you when the disc goes to sleep or out of range, and reconnects by itself.
 - **Taps.** Double tap the crown to play or pause, triple tap to skip, and tap the face repeatedly to ring your phone.
-- **Firmware recovery.** Detects discs stuck in their bootloader and reflashes them over Nordic DFU.
+- **Firmware.** Install firmware from a file on a working disc (it restarts into its bootloader and is flashed over Nordic DFU), and recover discs stuck in their bootloader.
 - **No account, no cloud, no tracking.**
 
 ## Install

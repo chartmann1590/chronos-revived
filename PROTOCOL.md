@@ -78,5 +78,23 @@ why it read 0% and the charger chip never started (Li-ion chargers won't charge 
 
 ## Firmware update
 
-Nordic legacy DFU with vendor UUIDs `beb81530/1531/1532/1534-b1b1-5b9d-b4a0-c030b58bc170`.
-Image: `app/src/main/res/raw/firmware.zip` (0.7.48, the newest ever shipped). PRN 12, no keep-bond.
+Nordic legacy DFU. The bootloader always uses vendor UUIDs `beb81530/1531/1532/1534-b1b1-5b9d-b4a0-c030b58bc170`;
+the init packet is plain legacy (`ffff ffff ffff ffff 0100 feff` + CRC16-CCITT of the image), not signed, so a
+modified image with a correct CRC is accepted. PRN 12.
+
+- **Factory/bricked disc** (no valid app): bootloader advertises at app address **+1**, unpaired. Flash with keep-bond off.
+- **Working disc**: the app exposes Nordic's standard `00001530-1212-efde-1523-785feabcd123` service. Enable
+  notifications on `…1531` and write `01 04`; the disc restarts into its bootloader **at the same address**, sends
+  only directed advertising to the bonded phone (no scan sees it), and rejects control-point writes (`WRITE NOT
+  PERMITTED`) unless the link is encrypted with the existing bond. Connect directly, keep the bond, flash.
+  If nothing connects it times out back to the app after a few minutes.
+- Android caches the service table of bonded devices, so after switching between bootloader and app call the
+  hidden `BluetoothGatt.refresh()` before discovering services.
+
+## Charging experiment (2026-11-03)
+
+P0.17 is the only output the firmware's charger module configures (driven low at boot by `0x1d734`, never set high).
+A patched 0.7.48 driving it high was flashed and run: the cell stayed at 30 mV / ADC 7 and status `04 00`, so P0.17
+doesn't gate charging. Original firmware restored. Other outputs: P0.00/P0.25/P0.26/P0.31 low, P0.02 high, unknown.
+With power present, an enabled charger would pull the battery node toward 4.2 V even into an open cell; a node
+held at ~0 V points to a shorted or dead cell (or a charger chip that has shut itself off), which firmware can't fix.

@@ -9,3 +9,4 @@ keystore.properties
 .serena/
 replay_pid*.log
 hs_err_pid*.log
+.kotlin/
