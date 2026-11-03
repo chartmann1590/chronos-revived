@@ -6,3 +6,6 @@ local.properties
 keystore.properties
 *.jks
 .playwright-mcp/
+.serena/
+replay_pid*.log
+hs_err_pid*.log
