@@ -55,7 +55,7 @@ keyPassword=...
 
 Releases are fully automatic. Every push to `main` that touches the app runs `.github/workflows/release.yml`, which:
 
-1. picks the next version (patch bump from the latest `v*` tag; put `[minor]` or `[major]` in a commit message for a bigger bump),
+1. picks the next version (patch bump from the latest `v*` tag; add a commit message line reading exactly `Release: minor` or `Release: major` for a bigger bump),
 2. runs the tests and builds the APK signed with the release key from repo secrets,
 3. creates the tag and a GitHub release with `chronos-revived.apk` and auto-generated notes.
 
