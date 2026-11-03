@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chronos Revived</title>
+<meta name="description" content="A free, open-source Android app that brings the discontinued Chronos smart disc back to life: notifications, steps, taps and firmware recovery, no servers needed.">
+<meta property="og:title" content="Chronos Revived">
+<meta property="og:description" content="Your Chronos disc works again. Free, open-source Android app for the discontinued Chronos smart disc.">
+<meta property="og:image" content="img/dial.webp">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-20 -20 40 40'%3E%3Ccircle r='19' fill='%23A9B4C2'/%3E%3Ccircle r='16' fill='%230D1A2C'/%3E%3Cline y2='-12' stroke='%23D3B37A' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cy='-9' r='2.5' fill='%23A9F2D2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --dial: #0D1A2C; --dial-light: #1E3554; --raised: #16273F; --brass: #D3B37A; --brass-dim: #7D6A4A;
+    --lume: #A9F2D2; --text: #EAEDF2; --muted: #8D9AAD; --line: rgba(141,154,173,.18);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--dial); color: var(--text);
+    font: 400 17px/1.6 Manrope, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brass); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--lume); outline-offset: 3px; border-radius: 6px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .mark { font-family: Michroma, sans-serif; font-size: 15px; color: var(--brass); text-decoration: none; letter-spacing: .02em; }
+  .top nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-weight: 500; font-size: 15px; }
+  .top nav a:hover { color: var(--text); }
+
+  /* Hero: words on the left, a live caseback on the right */
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 40px 0 88px; }
+  .hero h1 {
+    font-family: Michroma, sans-serif; font-weight: 400; font-size: clamp(34px, 5.2vw, 58px);
+    line-height: 1.12; margin: 0 0 22px; letter-spacing: -.01em;
+  }
+  .hero p.lede { font-size: 19px; color: #C9D1DC; max-width: 34em; margin: 0 0 32px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px; padding: 15px 28px; border-radius: 999px;
+    font-weight: 700; font-size: 16px; text-decoration: none; transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn.primary { background: var(--brass); color: var(--dial); box-shadow: 0 10px 30px -12px rgba(211,179,122,.6); }
+  .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 14px 34px -12px rgba(211,179,122,.8); }
+  .btn.ghost { color: var(--text); border: 1px solid var(--line); }
+  .btn.ghost:hover { border-color: var(--brass-dim); }
+  .fine { color: var(--muted); font-size: 14px; margin-top: 16px; }
+
+  .dial-wrap { position: relative; justify-self: center; width: min(460px, 100%); aspect-ratio: 1; }
+  .dial-wrap svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .toast {
+    position: absolute; left: 50%; bottom: -10px; transform: translate(-50%, 8px); opacity: 0;
+    background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px 8px 12px;
+    display: flex; gap: 10px; align-items: center; font-size: 14px; white-space: nowrap;
+    transition: opacity .35s ease, transform .35s ease;
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .toast i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+  section { padding: 88px 0; border-top: 1px solid var(--line); }
+  h2 { font-weight: 700; font-size: clamp(26px, 3vw, 34px); line-height: 1.2; margin: 0 0 14px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); max-width: 40em; margin: 0 0 48px; }
+
+  /* Feature rows: screenshot and words, alternating sides */
+  .feature { display: grid; grid-template-columns: 340px 1fr; gap: 64px; align-items: center; margin-bottom: 72px; }
+  .feature:nth-of-type(even) { grid-template-columns: 1fr 340px; }
+  .feature:nth-of-type(even) .shot { order: 2; }
+  .feature h3 { font-size: 22px; margin: 0 0 10px; }
+  .feature p { color: #C9D1DC; margin: 0 0 12px; max-width: 32em; }
+  .shot {
+    border-radius: 30px; padding: 10px; background: linear-gradient(145deg, #59677A, #D5DCE5 35%, #4A5668 65%, #A9B4C2);
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,.8);
+  }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 22px; }
+  .swatches { display: flex; gap: 10px; margin-top: 18px; }
+  .swatches span { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 14px currentColor; background: radial-gradient(circle at 40% 35%, #fff 0 18%, currentColor 55%); }
+
+  /* Recovery steps are a real sequence, so they get numbers */
+  ol.steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; counter-reset: s; }
+  ol.steps li { counter-increment: s; border-top: 2px solid var(--brass-dim); padding-top: 18px; }
+  ol.steps li::before { content: counter(s); font-family: Michroma, sans-serif; color: var(--brass); font-size: 22px; display: block; margin-bottom: 10px; }
+  ol.steps h3 { font-size: 18px; margin: 0 0 6px; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .under { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .under dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 12px 22px; }
+  .under dt { color: var(--muted); }
+  .under dd { margin: 0; }
+  pre.bytes {
+    margin: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 18px; padding: 22px;
+    overflow-x: auto; font: 14px/1.9 ui-monospace, "Cascadia Code", Menlo, monospace; color: var(--muted);
+  }
+  pre.bytes b { color: var(--lume); font-weight: 500; }
+
+  .faq details { border-bottom: 1px solid var(--line); padding: 18px 0; max-width: 46em; }
+  .faq summary { cursor: pointer; font-weight: 600; font-size: 18px; list-style: none; display: flex; justify-content: space-between; gap: 20px; }
+  .faq summary::after { content: "+"; color: var(--brass); font-size: 22px; line-height: 1; transition: transform .2s ease; }
+  .faq details[open] summary::after { transform: rotate(45deg); }
+  .faq details p { color: #C9D1DC; margin: 12px 0 0; }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--muted); font-size: 14px; }
+  footer p { max-width: 52em; }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; padding-top: 16px; gap: 56px; }
+    .dial-wrap { width: min(360px, 100%); }
+    .feature, .feature:nth-of-type(even) { grid-template-columns: 1fr; gap: 28px; }
+    .feature:nth-of-type(even) .shot { order: 0; }
+    .shot { max-width: 320px; }
+    ol.steps { grid-template-columns: 1fr 1fr; }
+    .under { grid-template-columns: 1fr; }
+    .top nav a:not(:last-child) { display: none; }
+  }
+  @media (max-width: 520px) { ol.steps { grid-template-columns: 1fr; } section { padding: 64px 0; } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="mark" href="#">Chronos Revived</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#recover">Recover a disc</a>
+      <a href="https://github.com/chartmann1590/chronos-revived">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1>Your Chronos disc works again.</h1>
+        <p class="lede">Chronos went out of business and took its app and servers with it. Chronos Revived is a free Android app that talks to the disc directly over Bluetooth, so your analog watch gets its buzzes, steps and taps back.</p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/chartmann1590/chronos-revived/releases/latest/download/chronos-revived.apk">Download for Android</a>
+          <a class="btn ghost" href="https://github.com/chartmann1590/chronos-revived">View the source</a>
+        </div>
+        <p class="fine">Android 8.0 or newer. No account, no cloud, no tracking.</p>
+      </div>
+      <div class="dial-wrap" aria-hidden="true">
+        <svg id="dial" viewBox="-200 -200 400 400"></svg>
+        <div class="toast" id="toast"><i></i><span></span></div>
+      </div>
+    </div>
+
+    <section id="features">
+      <h2>Everything the disc could do, minus the dead servers</h2>
+      <p class="sub">The app was rebuilt from the original Bluetooth protocol, so nothing depends on a company that no longer exists.</p>
+
+      <div class="feature">
+        <div class="shot"><img src="img/apps.webp" width="800" height="1184" alt="List of apps that buzz the disc, each with its own light colour and pulse count"></div>
+        <div>
+          <h3>Know what arrived without looking</h3>
+          <p>Pick the apps that should reach your wrist. Texts can glow green with one pulse, calls white with three, the group chat red. The disc lights up under your watch and vibrates, and your phone stays in your pocket.</p>
+          <p>Silent notifications never buzz, and incoming calls always get through.</p>
+          <div class="swatches" aria-label="Available light colours">
+            <span style="color:#FF5D50"></span><span style="color:#FFD45C"></span><span style="color:#5EE48C"></span><span style="color:#5EE4E2"></span><span style="color:#5E8DFF"></span><span style="color:#E45ED9"></span><span style="color:#F5F5F2"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="shot"><img src="img/dial.webp" width="800" height="968" alt="The app's dial showing steps today with a sweeping seconds hand"></div>
+        <div>
+          <h3>A dial, not a dashboard</h3>
+          <p>The home screen looks like the back of a good watch: a sunburst dial, brass indices, and a minute track that fills with lume as the battery charges. Today's steps sit in the middle and a seconds hand sweeps while the disc is connected.</p>
+          <p>Below it, a week of steps and a 24-hour battery history.</p>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="shot"><img src="img/sheet.webp" width="800" height="576" alt="Picking a light colour and number of pulses for one app"></div>
+        <div>
+          <h3>Taps that do things</h3>
+          <p>Double tap the crown to play or pause music, triple tap to skip. Tap the watch face over and over and your phone rings, even on silent.</p>
+          <p>Each one can be switched off if you'd rather keep your wrist quiet.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="recover">
+      <h2>Bring a dead disc back</h2>
+      <p class="sub">Many discs left in a drawer end up stuck in their bootloader with no working firmware. The app spots this and reflashes them.</p>
+      <ol class="steps">
+        <li><h3>Install the app</h3><p>Download the APK from the latest release and open it.</p></li>
+        <li><h3>Wake the disc</h3><p>Take it off the charger and shake it. It only advertises for a moment after it moves.</p></li>
+        <li><h3>Pair</h3><p>Tap Find my Chronos and accept the Bluetooth pairing request.</p></li>
+        <li><h3>Reflash if needed</h3><p>If the disc has no firmware, pick the original Chronos APK and the app installs firmware 0.7.48 from it.</p></li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Under the caseback</h2>
+      <p class="sub">Everything was worked out from the last official app and its firmware, then checked against a real disc. The full write-up is in <a href="https://github.com/chartmann1590/chronos-revived/blob/main/PROTOCOL.md">PROTOCOL.md</a>.</p>
+      <div class="under">
+        <dl>
+          <dt>Chip</dt><dd>Nordic nRF51 with the S110 Bluetooth stack</dd>
+          <dt>Motion</dt><dd>Kionix accelerometer for steps and taps</dd>
+          <dt>Vibration</dt><dd>TI DRV2605 haptic driver</dd>
+          <dt>Service</dt><dd><code>beb81000-b1b1-5b9d-b4a0-c030b58bc170</code></dd>
+          <dt>Firmware</dt><dd>0.7.48 over Nordic legacy DFU</dd>
+        </dl>
+<pre class="bytes"><b>97 01 FF</b>             LED brightness
+<b>9C 00</b>                current steps
+<b>9D 00</b>                next history record
+<b>B2 01 01</b>             enable crown taps
+<b>91 11 61 01 …</b>       program the light
+<b>90 0A 40 01 31 82 …</b> program the buzz
+<b>95 04 61 01 40 01</b>    play it now</pre>
+      </div>
+    </section>
+
+    <section class="faq">
+      <h2>Questions</h2>
+      <details><summary>Is this the official Chronos app?</summary><p>No. It's an independent, open-source project. It isn't affiliated with or endorsed by Chronos Wearables, which has shut down. "Chronos" is used only to say which device this works with.</p></details>
+      <details><summary>Why do I need the original Chronos APK to reflash?</summary><p>The firmware belongs to Chronos, so this project doesn't redistribute it. If your disc needs firmware, choose your copy of the original app's APK (com.wearchronos.chronos) and the app takes the firmware out of it on your phone.</p></details>
+      <details><summary>My disc says it's on the charger but the battery stays at 0%.</summary><p>The disc's charger chip works on its own, so no app can force it to charge. Clean the contacts on the disc and the cradle and leave it overnight; the battery chart shows whether the level climbs. If it never does, the cell is likely worn out and needs replacing.</p></details>
+      <details><summary>Does it work on iPhone?</summary><p>Not yet. This release is Android only.</p></details>
+      <details><summary>Does it send my data anywhere?</summary><p>No. There's no account and no server. Notifications are read on your phone only to decide whether to buzz, and nothing leaves the device.</p></details>
+    </section>
+  </main>
+
+  <footer>
+    <p>Chronos Revived is free software under the MIT licence. Not affiliated with Chronos Wearables; all trademarks belong to their owners. Fonts: Michroma and Manrope, SIL Open Font License.</p>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const NS = "http://www.w3.org/2000/svg", svg = document.getElementById("dial");
+  const el = (n, a, p = svg) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e; };
+  const defs = el("defs", {});
+  defs.innerHTML = `
+    <linearGradient id="bezel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#59677A"/><stop offset=".3" stop-color="#D5DCE5"/><stop offset=".65" stop-color="#4A5668"/><stop offset="1" stop-color="#A9B4C2"/></linearGradient>
+    <radialGradient id="face" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#1E3554"/><stop offset="1" stop-color="#0D1A2C"/></radialGradient>
+    <linearGradient id="baton" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F0DCAE"/><stop offset=".5" stop-color="#D3B37A"/><stop offset="1" stop-color="#9C8156"/></linearGradient>
+    <radialGradient id="glow"><stop offset="0" stop-color="currentColor" stop-opacity=".65"/><stop offset=".6" stop-color="currentColor" stop-opacity=".18"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></radialGradient>`;
+  el("circle", { r: 200, fill: "url(#bezel)" });
+  el("circle", { r: 188, fill: "url(#face)" });
+  const sun = el("g", { opacity: .05 });
+  for (let i = 0; i < 180; i++) el("line", { x1: 0, y1: 0, x2: 0, y2: -188, stroke: "#fff", "stroke-width": 1.4, transform: `rotate(${i * 2})` }, sun);
+  const glow = el("circle", { r: 186, fill: "url(#glow)", opacity: 0, style: "color:#5E8DFF" });
+  const ticks = [];
+  for (let i = 0; i < 60; i++) {
+    const five = i % 5 === 0;
+    ticks.push(el("line", { x1: 0, y1: -180, x2: 0, y2: five ? -166 : -172, stroke: five ? "#D3B37A" : "rgba(141,154,173,.4)",
+      "stroke-width": five ? 2.8 : 1.6, "stroke-linecap": "round", transform: `rotate(${i * 6})` }));
+  }
+  for (let h = 0; h < 12; h++) el("rect", { x: h ? -2.6 : -5, y: -158, width: h ? 5.2 : 10, height: 26, rx: h ? 2.6 : 5, fill: "url(#baton)", transform: `rotate(${h * 30})` });
+  const print = el("text", { x: 0, y: -66, "text-anchor": "middle", fill: "#D3B37A", "font-family": "Michroma", "font-size": 15 });
+  print.textContent = "Chronos";
+  const steps = el("text", { x: 0, y: 92, "text-anchor": "middle", fill: "#EAEDF2", "font-family": "Michroma", "font-size": 30 });
+  const label = el("text", { x: 0, y: 116, "text-anchor": "middle", fill: "#8D9AAD", "font-family": "Manrope", "font-size": 13 });
+  label.textContent = "steps today";
+  const hand = el("g", {});
+  el("line", { x1: 0, y1: 38, x2: 0, y2: -168, stroke: "#D3B37A", "stroke-width": 2.2, "stroke-linecap": "round" }, hand);
+  el("circle", { cy: -136, r: 6, fill: "#A9F2D2" }, hand);
+  el("circle", { r: 6.5, fill: "#D3B37A" }); el("circle", { r: 2.6, fill: "#0D1A2C" });
+
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const battery = 0.78, target = 8412, t0 = performance.now();
+  ticks.forEach((t, i) => { if (i < battery * 60 && i % 5) t.setAttribute("stroke", "#A9F2D2"); });
+
+  // One orchestrated moment: steps count up, then notifications arrive in their own colours.
+  const buzzes = [["#5EE48C", "Messages", 1], ["#FF5D50", "Group chat", 3], ["#5E8DFF", "Calendar", 2], ["#F5F5F2", "Incoming call", 3]];
+  const toast = document.getElementById("toast");
+  let buzzAt = -1, buzz = null, next = 0;
+  function frame(now) {
+    const t = now - t0;
+    const k = reduce ? 1 : Math.min(1, t / 1400);
+    steps.textContent = Math.round(target * (1 - Math.pow(1 - k, 3))).toLocaleString();
+    hand.setAttribute("transform", `rotate(${reduce ? 40 : (t / 60000 * 360) % 360})`);
+    if (!reduce && t > 2200 + next * 4200) {
+      buzz = buzzes[next % buzzes.length]; buzzAt = now; next++;
+      glow.style.color = buzz[0];
+      toast.querySelector("i").style.cssText = `background:${buzz[0]};box-shadow:0 0 10px ${buzz[0]}`;
+      toast.querySelector("span").textContent = `${buzz[1]}, ${buzz[2]} ${buzz[2] > 1 ? "pulses" : "pulse"}`;
+      toast.classList.add("on");
+    }
+    if (buzz) {
+      const e = now - buzzAt, per = 640, n = buzz[2];
+      if (e < per * n) { const p = (e % per) / per; glow.setAttribute("opacity", p < .25 ? p / .25 : 1 - (p - .25) / .75); }
+      else glow.setAttribute("opacity", 0);
+      if (e > 3000) toast.classList.remove("on");
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

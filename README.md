@@ -1,0 +1,71 @@
+# Chronos Revived
+
+A free, open-source Android app for the **Chronos smart disc**, the little puck that sits under an analog watch and gives it notifications and step tracking. Chronos Wearables shut down along with its app and servers. This app talks to the disc directly over Bluetooth, so nothing depends on them.
+
+**[Website](https://chartmann1590.github.io/chronos-revived/) · [Download the APK](https://github.com/chartmann1590/chronos-revived/releases/latest/download/chronos-revived.apk)**
+
+<p align="center">
+  <img src="docs/img/dial.webp" width="260" alt="Home dial">
+  <img src="docs/img/apps.webp" width="260" alt="Apps that buzz">
+</p>
+
+## Features
+
+- **Notifications on your wrist.** Pick which apps buzz the disc, each with its own light colour (7 colours) and 1–3 pulses. Select all or clear all in one tap. Calls always get through; silent notifications never buzz.
+- **Steps.** Live count plus a week chart, pulled from the disc's own history.
+- **Battery.** Live level, charging state and a 24-hour battery chart.
+- **Taps.** Double tap the crown to play or pause, triple tap to skip, and tap the face repeatedly to ring your phone.
+- **Firmware recovery.** Detects discs stuck in their bootloader and reflashes them over Nordic DFU.
+- **No account, no cloud, no tracking.**
+
+## Install
+
+1. Download `chronos-revived.apk` from the [latest release](https://github.com/chartmann1590/chronos-revived/releases/latest) and install it (allow installs from unknown sources).
+2. Open the app, take the disc off its charger and shake it, then tap **Find my Chronos**.
+3. Accept the Bluetooth pairing request. If no window appears, it's waiting in your notification shade.
+4. Tap **Allow notification access**, then pick the apps that should buzz.
+
+Requires Android 8.0+ with Bluetooth LE.
+
+### Firmware
+
+The disc firmware belongs to Chronos and is **not** included in this repo. If your disc needs firmware, the app asks you to pick your copy of the original Chronos APK (`com.wearchronos.chronos`) and extracts `firmware.zip` (v0.7.48) from it on the phone.
+
+## Build
+
+```sh
+./gradlew assembleDebug          # debug build, installs as com.chronosrevived.debug
+./gradlew testDebugUnitTest      # protocol unit tests
+./gradlew assembleRelease        # needs keystore.properties (see below)
+```
+
+For signed release builds, create `keystore.properties` in the project root (it's git-ignored):
+
+```properties
+storeFile=/path/to/release.jks
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+## How it works
+
+The Bluetooth protocol was worked out from the last official Android app and its firmware, then verified against a real disc. See **[PROTOCOL.md](PROTOCOL.md)** for services, status bits, command bytes and hardware notes.
+
+| File | Role |
+|---|---|
+| `Proto.kt` | Command builders and response parsers |
+| `Chronos.kt` | BLE connection, GATT queue, pairing, reconnects |
+| `NotifyListener.kt` | Forwards chosen notifications to the disc |
+| `Gestures.kt` | Media keys and find-my-phone from tap events |
+| `Firmware.kt` | Firmware import and DFU flashing |
+| `Ui.kt` | Compose UI |
+
+## Known limits
+
+- **Charging is controlled by hardware.** The disc's charger chip works on its own and the firmware has no way to force it. If the battery stays at 0% on the charger, clean the contacts; if that doesn't help, the cell probably needs replacing.
+- Android only for now.
+
+## Disclaimer
+
+Not affiliated with or endorsed by Chronos Wearables. "Chronos" is used only to identify compatible hardware. Licensed under [MIT](LICENSE). Fonts: Michroma and Manrope (SIL Open Font License).
